@@ -1,142 +1,86 @@
-import pandas as pd
-from glob import glob
-import os
-import tkinter
-import csv
 import tkinter as tk
 from tkinter import *
+import os
+import csv
+import time
+import security_utils # Bütünlük kontrolü için şart
 
 def subjectchoose(text_to_speech):
     def calculate_attendance():
-        Subject = tx.get()
-        if Subject=="":
-            t='Please enter the subject name.'
-            text_to_speech(t)
-    
-        filenames = glob(
-            f"Attendance\\{Subject}\\{Subject}*.csv"
-        )
-        df = [pd.read_csv(f) for f in filenames]
-        newdf = df[0]
-        for i in range(1, len(df)):
-            newdf = newdf.merge(df[i], how="outer")
-        newdf.fillna(0, inplace=True)
-        newdf["Attendance"] = 0
-        for i in range(len(newdf)):
-            newdf["Attendance"].iloc[i] = str(int(round(newdf.iloc[i, 2:-1].mean() * 100)))+'%'
-            #newdf.sort_values(by=['Enrollment'],inplace=True)
-        newdf.to_csv(f"Attendance\\{Subject}\\attendance.csv", index=False)
-
-        root = tkinter.Tk()
-        root.title("Attendance of "+Subject)
+        root = tk.Tk()
+        root.title("Yoklama Listesi")
+        root.geometry("600x500")
         root.configure(background="black")
-        cs = f"Attendance\\{Subject}\\attendance.csv"
-        with open(cs) as file:
-            reader = csv.reader(file)
-            r = 0
-
-            for col in reader:
-                c = 0
-                for row in col:
-
-                    label = tkinter.Label(
-                        root,
-                        width=10,
-                        height=1,
-                        fg="yellow",
-                        font=("times", 15, " bold "),
-                        bg="black",
-                        text=row,
-                        relief=tkinter.RIDGE,
-                    )
-                    label.grid(row=r, column=c)
-                    c += 1
-                r += 1
-        root.mainloop()
-        print(newdf)
-
-    subject = Tk()
-    # windo.iconbitmap("AMS.ico")
-    subject.title("Subject...")
-    subject.geometry("580x320")
-    subject.resizable(0, 0)
-    subject.configure(background="black")
-    # subject_logo = Image.open("UI_Image/0004.png")
-    # subject_logo = subject_logo.resize((50, 47), Image.ANTIALIAS)
-    # subject_logo1 = ImageTk.PhotoImage(subject_logo)
-    titl = tk.Label(subject, bg="black", relief=RIDGE, bd=10, font=("arial", 30))
-    titl.pack(fill=X)
-    # l1 = tk.Label(subject, image=subject_logo1, bg="black",)
-    # l1.place(x=100, y=10)
-    titl = tk.Label(
-        subject,
-        text="Which Subject of Attendance?",
-        bg="black",
-        fg="green",
-        font=("arial", 25),
-    )
-    titl.place(x=100, y=12)
-
-    def Attf():
+        
         sub = tx.get()
         if sub == "":
-            t="Please enter the subject name!!!"
-            text_to_speech(t)
-        else:
-            os.startfile(
-            f"Attendance\\{sub}"
-            )
+            text_to_speech("Lütfen ders adını giriniz")
+            root.destroy(); return
 
+        attendance_path = os.path.join("Attendance", sub)
+        
+        if not os.path.exists(attendance_path):
+            text_to_speech("Kayıt bulunamadı")
+            root.destroy(); return
 
-    attf = tk.Button(
-        subject,
-        text="Check Sheets",
-        command=Attf,
-        bd=7,
-        font=("times new roman", 15),
-        bg="black",
-        fg="yellow",
-        height=2,
-        width=10,
-        relief=RIDGE,
-    )
-    attf.place(x=360, y=170)
+        file_list = [f for f in os.listdir(attendance_path) if f.endswith('.csv')]
+        if not file_list:
+            text_to_speech("Dosya yok")
+            root.destroy(); return
+            
+        latest_file = max([os.path.join(attendance_path, f) for f in file_list], key=os.path.getmtime)
+        
+        # --- BÜTÜNLÜK KONTROLÜ ---
+        is_valid, msg = security_utils.verify_file_integrity(latest_file)
+        
+        status_color = "green" if is_valid else "red"
+        status_text = f"DOSYA DURUMU: {msg}"
+        
+        if not is_valid:
+            text_to_speech("Uyarı! Dosya bütünlüğü bozulmuş.")
+            try: security_utils.log_access("SYSTEM", os.path.basename(latest_file), "Tampered")
+            except: pass
+        # -------------------------
 
-    sub = tk.Label(
-        subject,
-        text="Enter Subject",
-        width=10,
-        height=2,
-        bg="black",
-        fg="yellow",
-        bd=5,
-        relief=RIDGE,
-        font=("times new roman", 15),
-    )
-    sub.place(x=50, y=100)
+        try:
+            frame = Frame(root); frame.pack(fill=BOTH, expand=1)
+            canvas = Canvas(frame, bg="black"); canvas.pack(side=LEFT, fill=BOTH, expand=1)
+            scrollbar = Scrollbar(frame, orient=VERTICAL, command=canvas.yview); scrollbar.pack(side=RIGHT, fill=Y)
+            canvas.configure(yscrollcommand=scrollbar.set); canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            inner_frame = Frame(canvas, bg="black"); canvas.create_window((0,0), window=inner_frame, anchor="nw")
 
-    tx = tk.Entry(
-        subject,
-        width=15,
-        bd=5,
-        bg="black",
-        fg="yellow",
-        relief=RIDGE,
-        font=("times", 30, "bold"),
-    )
-    tx.place(x=190, y=100)
+            # --- DÜZELTİLEN KISIM BURASI (Durum Başlığı Eklendi) ---
+            # 1. Satır: Dosya Durumu (Yeşil veya Kırmızı)
+            tk.Label(inner_frame, text=status_text, fg=status_color, bg="black", font=("arial", 12, "bold")).grid(row=0, column=0, columnspan=4, pady=10)
+            
+            # 2. Satır: Dosya Adı (Beyaz)
+            tk.Label(inner_frame, text=f"Dosya: {os.path.basename(latest_file)}", fg="white", bg="black", font=("arial", 10)).grid(row=1, column=0, columnspan=4)
+            # -------------------------------------------------------
 
-    fill_a = tk.Button(
-        subject,
-        text="View Attendance",
-        command=calculate_attendance,
-        bd=7,
-        font=("times new roman", 15),
-        bg="black",
-        fg="yellow",
-        height=2,
-        width=12,
-        relief=RIDGE,
-    )
-    fill_a.place(x=195, y=170)
+            with open(latest_file, newline="") as file:
+                reader = csv.reader(file)
+                for r, col in enumerate(reader):
+                    for c, row in enumerate(col):
+                        label = tk.Label(inner_frame, width=15, height=1, fg="yellow", font=("times", 12, "bold"), bg="black", text=row, relief=tk.RIDGE)
+                        # row+2 yapıyoruz çünkü üstte 2 satır başlık var
+                        label.grid(row=r+2, column=c)
+
+            text_to_speech("Liste açıldı")
+            root.mainloop()
+
+        except Exception as e:
+            print(e)
+            text_to_speech("Dosya okuma hatası")
+
+    subject = Tk()
+    subject.title("Ders Seçimi")
+    subject.geometry("500x250")
+    subject.configure(background="#2c3e50")
+    subject.resizable(0,0)
+    
+    tk.Label(subject, text="Ders Adını Giriniz", bg="#2c3e50", fg="white", font=("Helvetica", 20, "bold")).pack(pady=20)
+    tx = tk.Entry(subject, width=20, font=("Helvetica", 18)); tx.pack(pady=10)
+    btn = tk.Button(subject, text="Listeyi Getir", command=calculate_attendance, bg="#3498db", fg="white", font=("Helvetica", 14), width=15)
+    btn.pack(pady=20)
+    
     subject.mainloop()

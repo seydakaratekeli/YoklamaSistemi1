@@ -6,3 +6,4 @@ pandas
 pillow
 pyttsx3
 cryptography
+Flask-Limiter

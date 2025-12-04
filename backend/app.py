@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 from flask_bcrypt import Bcrypt
 import numpy as np
 
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 # Blueprint imports
 from auth.routes import auth_bp
 
@@ -168,9 +171,27 @@ logger.info("Initializing Model Manager...")
 model_manager = ModelManager()
 
 # Flask app
+# backend/app.py içinde:
+
 app = Flask(__name__)
 CORS(app)
 
+# --- GÜVENLİK AYARI EKLENDİ ---
+# .env dosyasındaki SECRET_KEY'i alıyoruz.
+app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
+
+if not app.config['SECRET_KEY']:
+    raise ValueError("HATA: .env dosyasında 'SECRET_KEY' bulunamadı! Lütfen ekleyin.")
+# ------------------------------
+# Rate Limiter Ayarları:
+# get_remote_address: İstek atan kişinin IP adresini alır.
+# default_limits: Herkese uygulanan varsayılan sınır (Günde 200, Saatte 50 istek).
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
 # Configure Flask app with database and model instances
 app.config["DB"] = db
 app.config["COLLECTION_NAME"] = COLLECTION_NAME

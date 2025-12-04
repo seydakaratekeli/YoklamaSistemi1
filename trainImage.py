@@ -1,63 +1,62 @@
-import csv
-import os, cv2
+import cv2
+import os
 import numpy as np
-import pandas as pd
-import datetime
-import time
-from PIL import ImageTk, Image
-import security_utils
+from PIL import Image
+import security_utils # Şifreleme için
 
-import csv
-import os, cv2
-import numpy as np
-import pandas as pd
-import datetime
-import time
-from PIL import ImageTk, Image
-import security_utils  # <--- Şifreleme modülü eklendi
-
-# Train Image
-def TrainImage(haarcasecade_path, trainimage_path, trainimagelabel_path, message, text_to_speech):
-    recognizer = cv2.face.LBPHFaceRecognizer_create()
-    detector = cv2.CascadeClassifier(haarcasecade_path)
-    
-    # Yüzleri ve etiketleri al
-    faces, Id = getImagesAndLables(trainimage_path)
-    
-    # Modeli eğit
-    recognizer.train(faces, np.array(Id))
-    
-    # 1. Modeli normal olarak kaydet
-    recognizer.save(trainimagelabel_path)
-    
-    # 2. Şifreleme İşlemi (YENİ EKLENEN KISIM)
-    try:
-        print("Şifreleme başlatılıyor...")
-        security_utils.encrypt_file(trainimagelabel_path)
-        print(f"Model şifrelendi: {trainimagelabel_path} -> .enc")
-        res = "Model Egitildi ve Sifrelendi (AES-256)"
-    except Exception as e:
-        print(f"Sifreleme Hatasi: {str(e)}")
-        res = "Model Egitildi ama Sifreleme BASARISIZ"
-
-    # Mesajı ekrana yaz ve seslendir
-    message.configure(text=res)
-    text_to_speech(res)
-
-def getImagesAndLables(path):
-    # imagePath = [os.path.join(path, f) for d in os.listdir(path) for f in d]
-    newdir = [os.path.join(path, d) for d in os.listdir(path)]
-    imagePath = [
-        os.path.join(newdir[i], f)
-        for i in range(len(newdir))
-        for f in os.listdir(newdir[i])
-    ]
+def getImagesAndLabels(path):
+    imagePaths = [os.path.join(path, f) for f in os.listdir(path)]
     faces = []
     Ids = []
-    for imagePath in imagePath:
-        pilImage = Image.open(imagePath).convert("L")
-        imageNp = np.array(pilImage, "uint8")
-        Id = int(os.path.split(imagePath)[-1].split("_")[1])
-        faces.append(imageNp)
-        Ids.append(Id)
+    
+    for imagePath in imagePaths:
+        try:
+            # Görüntüyü yükle ve griye çevir
+            pilImage = Image.open(imagePath).convert("L")
+            imageNp = np.array(pilImage, "uint8")
+            
+            # Dosya adından ID'yi al (Isim.ID.Numara.jpg)
+            Id = int(os.path.split(imagePath)[-1].split(".")[1])
+            
+            faces.append(imageNp)
+            Ids.append(Id)
+        except:
+            continue
+            
     return faces, Ids
+
+def TrainImage(haarcasecade_path, trainimage_path, trainimagelabel_path, message, text_to_speech):
+    try:
+        recognizer = cv2.face.LBPHFaceRecognizer_create()
+        detector = cv2.CascadeClassifier(haarcasecade_path)
+        
+        faces, Id = getImagesAndLabels(trainimage_path)
+        
+        if len(faces) == 0:
+            message.configure(text="Eğitilecek fotoğraf bulunamadı!", fg="red")
+            text_to_speech("Klasör boş")
+            return
+
+        recognizer.train(faces, np.array(Id))
+        
+        # Modeli kaydet (Önce normal .yml olarak)
+        if not os.path.exists("TrainingImageLabel"):
+            os.makedirs("TrainingImageLabel")
+            
+        recognizer.save(trainimagelabel_path)
+        
+        # --- MODELİ ŞİFRELE (GÜVENLİK) ---
+        try:
+            security_utils.encrypt_file(trainimagelabel_path)
+            msg_add = " (ve Şifrelendi)"
+        except:
+            msg_add = ""
+        # ---------------------------------
+        
+        res = f"Model Eğitildi{msg_add}. Toplam Öğrenci: {len(np.unique(Id))}"
+        message.configure(text=res, fg="#2ecc71")
+        text_to_speech("Model başarıyla eğitildi")
+        
+    except Exception as e:
+        message.configure(text=f"Eğitim Hatası: {str(e)}", fg="red")
+        text_to_speech("Model eğitimi başarısız")
